@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Websocket example</title>
+<style>
+      html, body, #map-canvas {
+        height: 100%;
+        top: 20px;
+        margin: 0px;
+        padding: 0px
+      }
+      #charts {
+      	float: left;
+      	margin-top: 70px;
+      }
+      #piechart {
+      	margin-top: 70px;
+      }
+      #positive_cnt {
+      	top: 35px;
+      	color: green;
+      	margin-left: 520px;
+      	margin-top: 10px;
+      	border: none;
+      	font-weight: bold;
+      	font-size: 20px;
+      }
+      #negative_cnt {
+      	top: 35px;
+      	color: red;
+      	margin-top: 10px;
+      	border: none;
+      	font-weight: bold;
+      	font-size: 20px;
+      }
+      #overall {
+      	top: 35px;
+      	color: black;
+      	margin-top: 10px;
+      	border: none;
+      	font-weight: bold;
+      	font-size: 20px;
+      	margin-left: 10px;
+      }
+      #panel {
+        position: absolute;
+        top: 50px;
+        left: 35%;
+        margin-left: -175px;
+        z-index: 5;
+        background-color: #fff;
+        padding: 0px;
+        border: 1px solid #999;
+      }
+      #search_div {
+      	height: 25px;
+      	width: 100px;
+      	float: left;
+      	margin-left: 10px;
+      }
+      #search_div, #submit_button {
+      	height: 25px;
+	}
+    </style>
+	<link rel="stylesheet" type="text/css" href="/js/jquery.tokenize.css" />
+</head>
+<body onload="init()">
+	<script type="text/javascript" src="jquery-2.1.3.min.js"></script>
+	<script type="text/javascript" src="jquery.tokenize.js"></script>
+	<script src="http://code.highcharts.com/highcharts.js"></script>
+	<div id="panel">
+      <button onclick="togglePositiveHeatmap()">Toggle Positive Heatmap</button>
+      <button onclick="toggleNegativeHeatmap()">Toggle Negative Heatmap</button>
+      <button onclick="toggleMarkers()">Toggle Markers</button>
+      <button onclick="changeGradient()">Change gradient</button>
+      <button onclick="changeRadius()">Change radius</button>
+      <button onclick="changeOpacity()">Change opacity</button>
+      <button id="toggleCharts" onclick="showCharts()" value="Show charts">Show charts</button>
+    </div>
+	<div id="search_div">
+		<select name="tags" id="tag_select" onchange="setTag(this)" multiple="multiple" class="tokenize-sample">
+			<option value="all" selected="selected">all</option>
+			<option value="music">music</option>
+			<option value="friends">friend</option>
+			<option value="nyc">nyc</option>
+			<option value="love">love</option>
+			<option value="apple">apple</option>
+			<option value="samsung">samsung</option>
+			<option value="party">party</option>
+			<option value="holiday">holiday</option>
+		</select>
+	</div>
+	<!--  <div id="messages"></div> -->
+	<div id="counts">
+		<input id="positive_cnt" type="text" contenteditable="false"/>
+		<input id="negative_cnt" type="text" contenteditable="false"/>
+		<input id="overall" type="text" contenteditable="false"/>
+	</div>
+	<div id="map-canvas"></div>
+	<div id="charts" hidden="true"></div>
+	<div id="piechart" hidden="true"></div>
+	<script src="https://maps.googleapis.com/maps/api/js?v=3.exp&signed_in=true&libraries=visualization"></script>
+	<script type="text/javascript">
+		var websocket;
+		//var pointArray;
+		var pointArrayPositive;
+		var pointArrayNegative;
+	    geocoder = new google.maps.Geocoder();
+	    var infowindow = new google.maps.InfoWindow();
+		var markerArray = [];
+		var markerDisplay = true;
+		var defaultGradient = true;
+		//var messages = document.getElementById("messages");
+		var xmlhttp;
+		var tag = 'all';
+		var lastRead = 0;
+		var tweetWeight = 0;
+		var firstLoad = false;
+		var positiveHeatmap;
+		var negativeHeatmap;
+		var tags = ['all'];
+		var eventSource;
+		var positiveCnt = 0;
+		var negativeCnt = 0;
+		var posCounts = [];
+		var negCounts = [];
+		
+		var positiveGradient = [
+				    		    'rgba(204, 255, 153, 0)',
+				    		    'rgba(153, 255, 51, 1)',
+				    		    'rgba(51, 255, 51, 1)',
+				    		    'rgba(102, 204, 0, 1)',
+				    		    'rgba(76, 153, 0, 1)',
+				    		    'rgba(0, 204, 0, 1)',
+				    		    'rgba(0, 153, 0, 1)',
+				    		    'rgba(51, 102, 0, 1)',
+				    		    'rgba(0, 102, 51, 1)',
+				    		    'rgba(0, 102, 0, 1)',
+				    		    'rgba(0, 102, 102, 1)',
+				    		    'rgba(0, 76, 153, 1)',
+				    		    'rgba(0, 51, 102, 1)',		    
+				    		    'rgba(0, 0, 102, 1)'
+				    		  ]
+		
+		var negativeGradient = [
+				    		    'rgba(255, 255, 153, 0)',
+				    		    'rgba(255, 255, 0, 1)',
+				    		    'rgba(255, 153, 51, 1)',
+				    		    'rgba(255, 128, 0, 1)',
+				    		    'rgba(255, 102, 102, 1)',
+				    		    'rgba(255, 80, 80, 1)',
+				    		    'rgba(255, 51, 51, 1)',
+				    		    'rgba(255, 30, 30, 1)',
+				    		    'rgba(255, 10, 10, 1)',
+				    		    'rgba(255, 0, 0, 1)',
+				    		    'rgba(204, 0, 0, 1)',
+				    		    'rgba(155, 10, 0, 1)',
+				    		    'rgba(153, 0, 0, 1)',
+				    		    'rgba(130, 0, 0, 1)'
+				    		  ]
+		
+		$(function () { 
+		    $('#charts').highcharts({
+		        chart: {
+		            type: 'bar'
+		        },
+		        title: {
+		            text: 'Tweet trends by tag'
+		        },
+		        xAxis: {
+		            categories: ['music', 'friends', 'nyc', 'love', 'apple', 'samsung', 'party', 'holiday']
+		        },
+		        yAxis: {
+		            title: {
+		                text: '# of tweets'
+		            }
+		        },
+		        series: [{
+		            name: 'Positive',
+		            data: [1, 0, 4, 6, 10, 12, 2, 4],
+		            color: '#00CC00'
+		        }, {
+		            name: 'Negative',
+		            data: [5, 7, 3, 5, 6, 2, 9, 10],
+		            color: '#FF0000'
+		        }]
+		    });
+		    
+		    $('#piechart').highcharts({
+		            chart: {
+		                plotBackgroundColor: null,
+		                plotBorderWidth: null,
+		                plotShadow: false
+		            },
+		            title: {
+		                text: 'Tweet Trends Percentage'
+		            },
+		            tooltip: {
+		                pointFormat: '{series.name}: <b>{point.percentage:.1f}%</b>'
+		            },
+		            plotOptions: {
+		                pie: {
+		                    allowPointSelect: true,
+		                    cursor: 'pointer',
+		                    dataLabels: {
+		                        enabled: true,
+		                        format: '<b>{point.name}</b>: {point.percentage:.1f} %',
+		                        style: {
+		                            color: (Highcharts.theme && Highcharts.theme.contrastTextColor) || 'black'
+		                        }
+		                    }
+		                }
+		            },
+		            series: [{
+		                type: 'pie',
+		                name: 'Tweet Sentiment Share',
+		                data: [
+		                    ['Positive', positiveCnt / (positiveCnt + negativeCnt)],
+		                    ['Negative', negativeCnt / (positiveCnt + negativeCnt)],
+		                ]
+		            }]
+		        });
+		});
+			
+		$('select#tag_select').tokenize({
+            onAddToken: function (text, value) {
+            	console.log("added token" + text);
+     			
+            	tags.push(text);
+            	tag = '';
+            	if(tags.length > 0) {
+            		tag = tags[0];
+            	}
+            	
+            	for(var t in tags) {
+            		if(t > 0) {
+            			console.log(tags[t]);
+            			tag  = tag + ":" + tags[t];
+            		}
+            	}
+            	console.log('tag:' + tag);
+            	eventSource.close();
+            	firstLoad = true;
+            	lastRead = 0;
+            	openSocket();
+            },
+            
+            onRemoveToken: function (text) {
+            	console.log("removed token" + text);
+            	var index = tags.indexOf(text);
+            	tags.splice(index,1);
+            	tag = '';
+            	
+            	if(tags.length > 0) {
+            		tag = tags[0];
+            		lastRead = 0;
+            	} else {
+            		/*clear the map if no tags are selected*/
+            		//pointArray.clear();
+            		pointArrayPositive.clear();
+            		pointArrayNegative.clear();
+            		
+        			for (var i = 0; i < markerArray.length; i++) {
+	        			if (markerArray[i] != null) {
+	        				markerArray[i].setMap(null);
+	        			    markerArray[i] = null;
+	        			}
+	      			  }
+					markerArray = [];
+					lastRead = 0;
+            	}
+            	
+            	
+            	for(var t in tags) {
+            		if(t > 0) {
+            			console.log(tags[t]);
+                		tag  = tag + ":" + tags[t];
+            		}
+            	}
+            	
+            	console.log('tag:' + tag);
+            	eventSource.close();
+            	firstLoad = true;
+            	openSocket();
+            }
+        });
+        
+		/*function toggleHeatmap() {
+			if(heatmap !== 'undefined')
+		  		heatmap.setMap(heatmap.getMap() ? null : map);
+		}*/
+		
+		function showCharts() {
+			$('#map-canvas').toggle();
+			$('#charts').toggle();
+			$('#piechart').toggle();
+			
+			var button = document.getElementById('toggleCharts');
+			button.textContent = (button.textContent == "Show charts" ? "Show map" : "Show charts");
+			updateCharts();			
+		}
+		
+		function updateCharts() {
+			var chart = $('#piechart').highcharts();
+			chart.series[0].data[0].update(positiveCnt / (positiveCnt + negativeCnt));
+			chart.series[0].data[1].update(negativeCnt / (positiveCnt + negativeCnt));
+			
+			var barchart = $('#charts').highcharts();
+			console.log('posCounts:');
+			console.log(posCounts);
+			barchart.series[0].setData(posCounts);
+			barchart.series[1].setData(negCounts);
+		}
+
+		function togglePositiveHeatmap() {
+			if(positiveHeatmap !== 'undefined')
+				positiveHeatmap.setMap(positiveHeatmap.getMap() ? null : map);
+		}
+		
+		function toggleNegativeHeatmap() {
+			if(negativeHeatmap !== 'undefined')
+				negativeHeatmap.setMap(negativeHeatmap.getMap() ? null : map);
+		}
+		
+		function toggleMarkers() {
+			if (markerArray !== 'undefined') {
+				if (markerDisplay === true) {
+					for (var i = 0; i < markerArray.length; i++) {
+						markerArray[i].setVisible(false);
+					}
+					markerDisplay = false;
+				} else {
+					for (var i = 0; i < markerArray.length; i++) {
+						markerArray[i].setVisible(true);
+					}
+					markerDisplay = true;
+				}
+				
+			}
+		}
+
+		function changeGradient() {
+		  var gradient = [
+		    'rgba(0, 255, 255, 0)',
+		    'rgba(0, 255, 255, 1)',
+		    'rgba(0, 191, 255, 1)',
+		    'rgba(0, 127, 255, 1)',
+		    'rgba(0, 63, 255, 1)',
+		    'rgba(0, 0, 255, 1)',
+		    'rgba(0, 0, 223, 1)',
+		    'rgba(0, 0, 191, 1)',
+		    'rgba(0, 0, 159, 1)',
+		    'rgba(0, 0, 127, 1)',
+		    'rgba(63, 0, 91, 1)',
+		    'rgba(127, 0, 63, 1)',
+		    'rgba(191, 0, 31, 1)',
+		    'rgba(255, 0, 0, 1)'
+		  ]
+		  /*if(heatmap !== 'undefined')
+		 	 heatmap.set('gradient', heatmap.get('gradient') ? null : gradient);*/
+		 	 
+		 	if (defaultGradient === true) {
+		 		 if(positiveHeatmap !== 'undefined') {
+						positiveHeatmap.set('gradient', gradient);
+					}
+		 		 
+		 			if(negativeHeatmap !== 'undefined') {
+				  		negativeHeatmap.set('gradient', gradient);
+					}
+		 		defaultGradient = false;
+				}
+			else {
+		 		if(positiveHeatmap !== 'undefined') {
+					positiveHeatmap.set('gradient', positiveGradient);
+					}
+		 		if(negativeHeatmap !== 'undefined') {
+				  	negativeHeatmap.set('gradient', negativeGradient);
+					}
+		 		defaultGradient = true;
+ 			 	}
+		 	}
+
+		function changeRadius() {
+			if(positiveHeatmap !== 'undefined')
+				positiveHeatmap.set('radius', positiveHeatmap.get('radius') ? null : 20);
+			if(negativeHeatmap !== 'undefined')
+				negativeHeatmap.set('radius', negativeHeatmap.get('radius') ? null : 20);
+		}
+
+		function changeOpacity() {
+			if (positiveHeatmap !== 'undefined')
+				positiveHeatmap.set('opacity', positiveHeatmap.get('opacity') ? null : 0.2);
+			if (negativeHeatmap !== 'undefined')
+				negativeHeatmap.set('opacity', negativeHeatmap.get('opacity') ? null : 0.2);
+		}
+				
+		function setTag(sel) {
+			window.clearInterval("openSocket()");
+			tag = sel.value;
+			
+			lastRead = 0;
+			firstLoad = true;
+			openSocket();
+		}
+
+		
+		function setFilter(sel, text) {
+			window.clearInterval("openSocket()");
+			tag = sel.value;
+			
+			lastRead = 0;
+			firstLoad = true;
+			openSocket();
+			openSocket();
+		}
+		
+		function init() {
+				openSocket();
+		}
+		
+		function openSocket() {
+			eventSource = new EventSource("http://" + document.domain + "/search/hang/" + tag + ":" + lastRead);
+			// After SSE handshake constructed
+			eventSource.onopen = function (e) {
+			 console.log('lastRead:' + lastRead);
+			 console.log("Waiting message..");
+			 console.time("Timer");
+			};
+
+			// Error handler
+			eventSource.onerror = function (e) {
+			};
+
+			// Message handler
+			eventSource.onmessage=function (e) {
+				console.log(e);
+	        	if(!e.data) {
+	        		if(firstLoad) {
+	        			//pointArray.clear();
+	        			pointArrayPositive.clear();
+	        			pointArrayNegative.clear();
+	        			for (var i = 0; i < markerArray.length; i++) {
+		        			if (markerArray[i] != null) {
+		        				markerArray[i].setMap(null);
+		        			    markerArray[i] = null;
+		        			}
+		      			  }
+						markerArray = [];
+						
+						positiveCnt = 0;
+						negativeCnt = 0;
+						var pos = document.getElementById("positive_cnt");
+						var neg = document.getElementById("negative_cnt");
+						var overall = document.getElementById("overall");
+						pos.value = "Positive Tweets: " + positiveCnt;
+						neg.value = "Negative Tweets: " + negativeCnt;
+						var v = positiveCnt > negativeCnt ? "Positive" : "Negative";
+						overall.value = "Overall : " + v;
+						
+		        		firstLoad = false;
+	        			
+	        		} else {
+	        			return;	
+	        		}
+	        	}
+	        		
+	        	if (firstLoad && pointArrayPositive !== undefined && pointArrayNegative !== undefined) {
+	        		//pointArray.clear();
+	        		pointArrayPositive.clear();
+	        		pointArrayNegative.clear();
+	        		for (var i = 0; i < markerArray.length; i++) {
+	        			if (markerArray[i] != null) {
+	        				markerArray[i].setMap(null);
+	        			    markerArray[i] = null;
+	        			}
+	      			  }
+					markerArray = [];
+					positiveCnt = 0;
+					negativeCnt = 0;
+	        		firstLoad = false;
+	        	}  
+	       	   	try {
+	       	   		var json = JSON.parse(e.data);
+	       	   	} catch(e1) {
+	       	   		console.log(e1);
+	       	   	}	
+				
+			
+				var tweets = json.tweet;
+				var counts = json.counts;
+				console.log(counts);//'music', 'friends', 'nyc', 'love', 'apple', 'samsung', 'party', 'holiday'
+				
+				var posDict = {};
+				var negDict = {};
+				for(var i in counts) {
+					posDict[counts[i].tag] = counts[i].positive_count.replace(/\,/g,'');
+					negDict[counts[i].tag] = counts[i].negative_count.replace(/\,/g,'');
+				}
+				
+				//'music', 'friends', 'nyc', 'love', 'apple', 'samsung', 'party', 'holiday'
+				posCounts = [];
+				posCounts.push(parseInt(posDict['%music%']));
+				posCounts.push(parseInt(posDict['%friends%']));
+				posCounts.push(parseInt(posDict['%nyc%']));
+				posCounts.push(parseInt(posDict['%love%']));
+				posCounts.push(parseInt(posDict['%apple%']));
+				posCounts.push(parseInt(posDict['%samsung%']));
+				posCounts.push(parseInt(posDict['%party%']));
+				posCounts.push(parseInt(posDict['%holiday%']));
+				
+				negCounts = [];
+				negCounts.push(parseInt(negDict['%music%']));
+				negCounts.push(parseInt(negDict['%friends%']));
+				negCounts.push(parseInt(negDict['%nyc%']));
+				negCounts.push(parseInt(negDict['%love%']));
+				negCounts.push(parseInt(negDict['%apple%']));
+				negCounts.push(parseInt(negDict['%samsung%']));
+				negCounts.push(parseInt(negDict['%party%']));
+				negCounts.push(parseInt(negDict['%holiday%']));
+				
+				
+				//var tweetData = [];
+				var tweetDataPositive = [];
+				var tweetDataNegative = [];
+				var pCount = 0;
+				var nCount = 0;
+				for (var i in tweets) {
+					var lat = tweets[i].latitude;
+					var lon = tweets[i].longitude;
+					var id = tweets[i].id;
+					var sentiment = tweets[i].sentiment;
+						
+					var latLng = new google.maps.LatLng(lat, lon);
+					var weightedLoc = {
+						location: latLng,
+						//weight: Math.pow(4, tweetWeight),
+						fresh: true,
+						username: tweets[i].username,
+						content: tweets[i].content,
+						sentiment: sentiment
+					};
+					if(sentiment === 'positive') {
+						positiveCnt += 1;
+						tweetDataPositive[pCount++] = weightedLoc;
+					} else if(sentiment === 'negative') {
+						negativeCnt += 1;
+						tweetDataNegative[nCount++] = weightedLoc;
+					}
+					//tweetData[i] = weightedLoc;
+					lastRead = id;
+
+					var pos = document.getElementById("positive_cnt");
+					var neg = document.getElementById("negative_cnt");
+					var overall = document.getElementById("overall");
+					pos.value = "Positive Tweets: " + positiveCnt;
+					neg.value = "Negative Tweets: " + negativeCnt;
+					var v = positiveCnt > negativeCnt ? "Positive" : "Negative";
+					overall.value = "Overall : " + v;
+				}
+				updateCharts();
+
+				if(pointArrayPositive === undefined || pointArrayNegative === undefined) {
+					pointArrayPositive = new google.maps.MVCArray(tweetDataPositive);
+					pointArrayNegative = new google.maps.MVCArray(tweetDataNegative);
+					var mapOptions = {
+						    zoom: 2,
+						    center: new google.maps.LatLng(21.774546, -89.649),
+						    mapTypeId: google.maps.MapTypeId.SATELLITE
+						  };
+					
+					map = new google.maps.Map(document.getElementById('map-canvas'),
+						      mapOptions);
+					
+					/*var positiveGradient = [
+							    		    'rgba(204, 255, 153, 0)',
+							    		    'rgba(153, 255, 51, 1)',
+							    		    'rgba(51, 255, 51, 1)',
+							    		    'rgba(102, 204, 0, 1)',
+							    		    'rgba(76, 153, 0, 1)',
+							    		    'rgba(0, 204, 0, 1)',
+							    		    'rgba(0, 153, 0, 1)',
+							    		    'rgba(51, 102, 0, 1)',
+							    		    'rgba(0, 102, 51, 1)',
+							    		    'rgba(0, 102, 0, 1)',
+							    		    'rgba(0, 102, 102, 1)',
+							    		    'rgba(0, 76, 153, 1)',
+							    		    'rgba(0, 51, 102, 1)',		    
+							    		    'rgba(0, 0, 102, 1)'
+							    		  ]*/
+					positiveHeatmap = new google.maps.visualization.HeatmapLayer({
+					    data: pointArrayPositive,
+					    gradient: positiveGradient
+					  });
+					positiveHeatmap.setMap(map);
+					
+					
+					/*var negativeGradient = [
+					    		    'rgba(255, 255, 153, 0)',
+					    		    'rgba(255, 255, 0, 1)',
+					    		    'rgba(255, 153, 51, 1)',
+					    		    'rgba(255, 128, 0, 1)',
+					    		    'rgba(255, 102, 102, 1)',
+					    		    'rgba(255, 80, 80, 1)',
+					    		    'rgba(255, 51, 51, 1)',
+					    		    'rgba(255, 30, 30, 1)',
+					    		    'rgba(255, 10, 10, 1)',
+					    		    'rgba(255, 0, 0, 1)',
+					    		    'rgba(204, 0, 0, 1)',
+					    		    'rgba(155, 10, 0, 1)',
+					    		    'rgba(153, 0, 0, 1)',
+					    		    'rgba(130, 0, 0, 1)'
+					    		  ]*/
+					negativeHeatmap = new google.maps.visualization.HeatmapLayer({
+					    data: pointArrayNegative,
+					    gradient: negativeGradient
+					  });
+					
+					negativeHeatmap.setMap(map);
+				
+					
+					markerArray = [];
+					createMarker(tweetDataPositive);
+					createMarker(tweetDataNegative);
+				}
+				else {
+					/*for (var i = 0; i < markerArray.length; i++) {
+						if(markerArray[i] != null) {
+							markerArray[i].setMap(null);
+	        			    markerArray[i] = null;
+						} 
+       			  }*/
+					//markerArray = [];
+					
+					/*for(var i in tweetData) {
+						pointArray.push(tweetData[i]);
+					}*/
+					for (var i in tweetDataPositive) {
+						pointArrayPositive.push(tweetDataPositive[i])
+					}
+					
+					for (var i in tweetDataNegative) {
+						pointArrayNegative.push(tweetDataNegative[i])
+					}
+					createMarker(tweetDataPositive);
+					createMarker(tweetDataNegative);
+				}
+	         }
+			   
+			};
+		
+		function createMarker(tweetData) {
+			var l = markerArray.length;
+			for(var i in tweetData) {
+				var ic = null;
+				if(tweetData[i].sentiment === 'positive')
+					ic = "http://maps.google.com/mapfiles/ms/icons/green-dot.png";
+				else if(tweetData[i].sentiment === 'negative')
+					ic = "http://maps.google.com/mapfiles/ms/icons/red-dot.png";
+				var marker = new google.maps.Marker({
+					position: tweetData[i].location,
+					map: map,
+					icon: ic
+				});
+				if(markerDisplay === false) {
+					marker.setVisible(false);
+				}
+				attachClickListener(marker, tweetData[i]);
+				markerArray[l++] = marker;
+			}
+		}
+
+		function attachClickListener(marker, tweet) {
+			var latLng = marker.position;
+			var username = tweet.username;
+			var content = tweet.content;
+			var infoWindow = new google.maps.InfoWindow();
+			
+			google.maps.event.addListener(marker, 'click', function() {
+				 geocoder.geocode({'latLng': latLng}, function(results, status) {
+				      if (status == google.maps.GeocoderStatus.OK) {
+				      	if (results[1]) {
+				        	infowindow.setContent(username + " says " + content+" at " + results[1].formatted_address);
+				          	infowindow.open(map, marker);
+				        }
+				      } else {
+				        alert("Geocoder failed due to: " + status);
+				      }
+				    });
+			});
+		}
+	</script>	
+</body>
+</html>

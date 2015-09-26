@@ -246,7 +246,7 @@ public class TweetSSEService extends HttpServlet{
 	}
 	
 	public void confirmTopicSubmission(SNSMessage message) {
-		AWSCredentials credentials = new BasicAWSCredentials("AKIAI2PCLP7B56QYHWUA", "Lu3+QL6P7cSFwl/IT4/l5vnXPOxzGM5dbHgPe7rP");
+		AWSCredentials credentials = new BasicAWSCredentials("", "");
 		AmazonSNSClient amazonSNSClient = new AmazonSNSClient(credentials);
 		
 		ConfirmSubscriptionRequest confirmSubscriptionRequest = new ConfirmSubscriptionRequest()
@@ -272,8 +272,7 @@ class SearchTweetTask implements Runnable {
 		this.connection = connection;
 		this.eventOutput = eventOutput;
 		this.filter = filter;
-		this.lastRead = lastRead;
-	}
+		this.lastRead = lastRead;	}
 	
 	public void run() {
 		String[] params = filter.split(":");
